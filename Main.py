@@ -4,6 +4,7 @@ import requests
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
+from tkinter.ttk import Progressbar
 
 
 class Application(tk.Frame):
@@ -11,13 +12,18 @@ class Application(tk.Frame):
     def __init__(self, master=None):
         super().__init__(master)
 
+        # File
+        self.file = None
+        self.saved = True
+
         # Menu
         self.menu = tk.Menu()
 
         self.file_menu = tk.Menu(self.menu)
-        self.file_menu.add_command(label="New", command=self.new)
-        self.file_menu.add_command(label="Save", command=self.save)
-        self.file_menu.add_command(label="Open", command=self.open)
+        self.file_menu.add_command(label="New", command=self.new, accelerator="Ctrl+N")
+        self.file_menu.add_command(label="Save", command=self.save, accelerator="Ctrl+S")
+        self.file_menu.add_command(label="Save As", command=self.save_as, accelerator="Ctrl+Shift+S")
+        self.file_menu.add_command(label="Open", command=self.open, accelerator="Ctrl+O")
 
         self.list_menu = tk.Menu(self.menu)
         self.list_menu.add_command(label="Insert Above", command=self.insert_above)
@@ -83,38 +89,82 @@ class Application(tk.Frame):
         else:
             return "Something went wrong"
 
-    # Menu
-    def new(self):
-        self.list_box.delete(0, tk.END)
-
-    def save(self):
+    def listbox_to_pil(self):
         puppets = {}
         for i in range(self.list_box.size()):
             puppets[self.list_box.get(i)[0]] = self.list_box.get(i)[1]
+        return puppets
+
+    # Menu
+    def new(self):
+        if not self.saved:
+            answer = messagebox.askyesnocancel(title="Unsaved changes", message="Do you want to save unsaved changes?")
+            if answer:
+                self.save()
+            elif answer is None:
+                return
+        self.list_box.delete(0, tk.END)
+        self.file = None
+        self.saved = True
+
+    def save(self):
+        if self.file is None:
+            file = filedialog.asksaveasfile(mode="w+", defaultextension=".pil", filetypes=(
+                ("Puppet information list", "*.pil"), ("JSON", "*.json"), ("All files", "*.*")))
+            json.dump(self.listbox_to_pil(), file)
+            self.file = file
+            self.saved = True
+        else:
+            self.file.truncate(0)
+            self.file.seek(0, 0)
+            json.dump(self.listbox_to_pil(), self.file)
+            self.saved = True
+
+    def save_as(self):
         file = filedialog.asksaveasfile(mode="w+", defaultextension=".pil", filetypes=(
             ("Puppet information list", "*.pil"), ("JSON", "*.json"), ("All files", "*.*")))
-        json.dump(puppets, file)
+        json.dump(self.listbox_to_pil(), file)
+        self.file = file
+        self.saved = True
 
     def open(self):
-        file = filedialog.askopenfile(mode="r", filetypes=(("Puppet information list", "*.pil"), ("JSON", "*.json"),
-                                                           ("All files", "*.*")))
+        if not self.saved:
+            answer = messagebox.askyesnocancel(title="Unsaved changes", message="Do you want to save unsaved changes?")
+            if answer:
+                self.save()
+            elif answer is None:
+                return
+        self.list_box.delete(0, tk.END)
+        file = filedialog.askopenfile(mode="r+", filetypes=(("Puppet information list", "*.pil"), ("JSON", "*.json"),
+                                                            ("All files", "*.*")))
         puppets = json.load(file)
         for name in puppets:
             self.list_box.insert(tk.END, (name, puppets[name]))
-        file.close()
+        self.file = file
+        self.saved = True
 
     def insert_above(self):
         self.list_box.insert(tk.ACTIVE, (self.nation_box.get(), self.password_box.get()))
+        self.nation_box.delete(0, tk.END)
+        self.password_box.delete(0, tk.END)
+        self.saved = False
 
     def append(self):
         self.list_box.insert(tk.END, (self.nation_box.get(), self.password_box.get()))
+        self.nation_box.delete(0, tk.END)
+        self.password_box.delete(0, tk.END)
+        self.saved = False
 
     def replace(self):
         self.list_box.delete(tk.ACTIVE)
         self.list_box.insert(tk.ACTIVE, (self.nation_box.get(), self.password_box.get()))
+        self.nation_box.delete(0, tk.END)
+        self.password_box.delete(0, tk.END)
+        self.saved = False
 
     def remove(self):
         self.list_box.delete(tk.ACTIVE)
+        self.saved = False
 
     def login_selected(self):
         puppet = self.list_box.get(tk.ACTIVE)
@@ -122,6 +172,8 @@ class Application(tk.Frame):
         messagebox.showinfo(title="Information", message=error_message)
 
     def login_all(self):
+        progress_bar = Progressbar(orient=tk.HORIZONTAL, length=100, mode='determinate')
+        progress_bar.grid(row=4, columnspan=2, sticky=tk.N+tk.E+tk.S+tk.W)
         errors = ""
         for i in range(self.list_box.size()):
             puppet = self.list_box.get(i)
@@ -129,6 +181,9 @@ class Application(tk.Frame):
             if error_message != "Login successful":
                 errors += (puppet[0]+": "+error_message+"\n")
             time.sleep(0.6)
+            progress_bar['value'] += (100/self.list_box.size())
+            root.update_idletasks()
+        progress_bar.grid_forget()
         if errors == "":
             messagebox.showinfo(title="Information", message="All logins successful")
         else:
@@ -137,5 +192,6 @@ class Application(tk.Frame):
 
 root = tk.Tk()
 root.title("Puppet Login")
-root.geometry("225x225")
+root.geometry("225x250")
+
 Application(root).mainloop()
